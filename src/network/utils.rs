@@ -5,6 +5,8 @@ use percent_encoding::{AsciiSet, CONTROLS};
 use regex::Regex;
 use reqwest::Client;
 use serde::Serialize;
+use std::path::Path;
+use std::fs;
 
 use crate::{config::structs::Config, utils::random_line};
 
@@ -126,7 +128,7 @@ pub(super) fn save_request(
     Ok(filename)
 }
 
-pub fn create_client(config: &Config, replay: bool) -> Result<Client, Box<dyn Error>> {
+pub fn create_client(config: &Config, replay: bool, server_certs: Vec<&Path>, client_cert: Option<&Path>, client_key: Option<&Path>) -> Result<Client, Box<dyn Error>> {
     let mut client = Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(config.timeout as u64))
@@ -137,6 +139,26 @@ pub fn create_client(config: &Config, replay: bool) -> Result<Client, Box<dyn Er
 
     if config.disable_trustdns {
         client = client.no_trust_dns();
+    }
+
+    for cert_path in server_certs {
+        let buf = fs::read(cert_path)?;
+
+        let cert = match reqwest::Certificate::from_pem(&buf) {
+            Ok(cert) => cert,
+            Err(err) => reqwest::Certificate::from_der(&buf)?,
+        };
+
+        client = client.add_root_certificate(cert);
+    }
+
+    if let (Some(cert_path), Some(key_path)) = (client_cert, client_key) {
+        let cert = fs::read(cert_path)?;
+        let key = fs::read(key_path)?;
+
+        let identity = reqwest::Identity::from_pkcs8_pem(&cert, &key)?;
+
+        client = client.identity(identity);
     }
 
     if replay {
