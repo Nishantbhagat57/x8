@@ -126,13 +126,7 @@ pub(super) fn save_request(
     Ok(filename)
 }
 
-pub fn create_client(
-    config: &Config,
-    replay: bool,
-    server_certs: Option<Vec<&str>>,
-    client_cert: Option<&str>,
-    client_key: Option<&str>,
-) -> Result<Client, Box<dyn Error>> {
+pub fn create_client(config: &Config, replay: bool) -> Result<Client, Box<dyn Error>> {
     let mut client = Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(config.timeout as u64))
@@ -168,28 +162,6 @@ pub fn create_client(
             Some(http::Version::HTTP_2) => client = client.http2_prior_knowledge(),
             _ => unreachable!()
         }
-    }
-
-    if let Some(cert_paths) = server_certs {
-        for cert_path in cert_paths {
-            let buf = std::fs::read(cert_path)?;
-
-            let cert = reqwest::Certificate::from_pem(&buf)
-                .or_else(|_| reqwest::Certificate::from_der(&buf))
-                .map_err(|err| format!("The file at path {} does not contain a valid PEM or DER certificate: {}", cert_path, err))?;
-
-            client = client.add_root_certificate(cert);
-        }
-    }
-
-    if let (Some(cert_path), Some(key_path)) = (client_cert, client_key) {
-        let cert = std::fs::read(cert_path)?;
-        let key = std::fs::read(key_path)?;
-
-        let identity = reqwest::Identity::from_pkcs8_pem(&cert, &key)
-            .map_err(|_| format!("The files {} or {} are invalid; expecting PEM encoded certificate and key", cert_path, key_path))?;
-
-        client = client.identity(identity);
     }
 
     Ok(client.build()?)
